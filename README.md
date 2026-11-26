@@ -77,5 +77,34 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 脱敏批次复读与交付闸门（mask_rule ↔ watermark）
+
+脱敏规则页完成一次处理后，在「输出水印复读 · 交付前验证」面板提交**脱敏批次**
+（样本编号、处理版本、的确切输出快照）。服务端只对这份确切输出做水印检测，
+生成绑定「样本 + 处理版本 + 批次」的**复读回执**；数据水印页依据回执确认这一版
+能否正式交付。
+
+关键不变量：
+
+- 回执的 `applies_to` 明确标识 `batch_id / batch_no / sample_code / version`；
+  交付资格只认绑定到同一 `batch_id` 的通过回执，某一批通过不能替另一批解锁。
+- 同一样本重处理会得到新批次/新版本，旧批次与旧回执保持不变；迟到的旧回执
+  交错返回时，前端按响应中的 `batch_id`（缺失时回退本次请求 id）贴回对应行，
+  并提示该早先结果仍只可用于旧批次那次交付。
+- 缺少水印必需字段（`水印编号` / `水印标记` 等载体字段）的输出判定为不可读，
+  批次不可交付：下载按钮禁用，`GET /api/mask-batches/{id}/delivery` 服务端
+  同样返回 `403`。
+
+主要接口（同时提供下划线/连字符及 `/api/reread/...` 等别名）：
+
+```text
+POST /api/mask-batches                 提交脱敏批次（可带 auto_reread）
+GET  /api/mask-batches[?sample_code=]  批次列表（含资格与回执）
+POST /api/mask-batches/{id}/reread     对该批次的确切输出做水印检测并生成回执
+GET  /api/reread-receipts              复读回执历史
+GET  /api/reread/state                 批次 + 回执 + 按样本分组的全量快照
+GET  /api/mask-batches/{id}/delivery   正式交付下载（无绑定本批通过回执 → 403）
+```
+
 领域：数据工程
 子方向：数据分析与数据应用

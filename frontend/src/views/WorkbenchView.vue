@@ -15,6 +15,9 @@
       </div>
     </header>
 
+    <RereadPanel v-if="meta.key === 'mask_rule'" />
+    <WatermarkDeliveryPanel v-else-if="meta.key === 'watermark'" />
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -94,8 +97,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
+import WatermarkDeliveryPanel from '@/components/WatermarkDeliveryPanel.vue'
+import RereadPanel from '@/components/RereadPanel.vue'
 import {
   createEntry,
   downloadEntries,
@@ -106,25 +111,27 @@ import {
 import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
-const meta = moduleMeta(props.moduleKey)
+// 同一路由组件在 /mask_rule 与 /watermark 之间切换时会被复用，
+// meta 必须是响应式的，否则跨页导航后仍显示首个模块的配置。
+const meta = computed(() => moduleMeta(props.moduleKey))
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
-const filterFields = meta.fields.slice(0, 3)
+const filterFields = computed(() => meta.value.fields.slice(0, 3))
 const showCreate = ref(false)
 const creating = ref(false)
 const createValues = ref<Record<string, string>>({})
 const stats = computed(() => [
-  { label: meta.metrics[0], value: total.value },
-  { label: meta.metrics[1], value: rows.value.filter((row) => row.status === meta.statuses[1]).length },
+  { label: meta.value.metrics[0], value: total.value },
+  { label: meta.value.metrics[1], value: rows.value.filter((row) => row.status === meta.value.statuses[1]).length },
   {
-    label: meta.metrics[2],
-    value: rows.value.filter((row) => row.status === meta.statuses[meta.statuses.length - 1]).length,
+    label: meta.value.metrics[2],
+    value: rows.value.filter((row) => row.status === meta.value.statuses[meta.value.statuses.length - 1]).length,
   },
 ])
 const statusSummary = computed(() =>
-  meta.statuses.map((status) => ({
+  meta.value.statuses.map((status) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
@@ -138,14 +145,14 @@ function resetFilters() {
 async function exportRows() {
   errorMessage.value = ''
   try {
-    await downloadEntries(meta.key, filters.value)
+    await downloadEntries(meta.value.key, filters.value)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '导出失败'
   }
 }
 
 function openCreate() {
-  createValues.value = Object.fromEntries(meta.fields.map((field) => [field, '']))
+  createValues.value = Object.fromEntries(meta.value.fields.map((field) => [field, '']))
   errorMessage.value = ''
   showCreate.value = true
 }
@@ -154,7 +161,7 @@ async function submitCreate() {
   creating.value = true
   errorMessage.value = ''
   try {
-    const result = await createEntry(meta.key, createValues.value)
+    const result = await createEntry(meta.value.key, createValues.value)
     if (!result.ok) throw new Error(result.message)
     showCreate.value = false
     await reload()
@@ -168,7 +175,7 @@ async function submitCreate() {
 async function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
   try {
-    const result = await applyAction(meta.key, Number(row.id), action)
+    const result = await applyAction(meta.value.key, Number(row.id), action)
     if (!result.ok) throw new Error(result.message)
     await reload()
   } catch (error) {
@@ -179,13 +186,23 @@ async function runAction(action: string, row: EntryRow) {
 async function reload() {
   errorMessage.value = ''
   try {
-    const payload = await listEntries(meta.key, filters.value)
+    const payload = await listEntries(meta.value.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '业务列表读取失败'
   }
 }
+
+watch(
+  () => props.moduleKey,
+  () => {
+    filters.value = {}
+    showCreate.value = false
+    errorMessage.value = ''
+    void reload()
+  },
+)
 
 onMounted(reload)
 </script>

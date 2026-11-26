@@ -7,6 +7,12 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'overview', component: Overview },
+    {
+      path: '/reread',
+      name: 'reread-entry',
+      component: WorkbenchView,
+      props: { moduleKey: 'mask_rule' },
+    },
     { path: '/:moduleKey', name: 'module', component: WorkbenchView, props: true },
   ],
 })
